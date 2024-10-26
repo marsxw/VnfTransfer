@@ -1,19 +1,15 @@
 # %%
-import torch.nn.functional as F
-import torch.nn as nn
-from torch.optim import Adam
-from torch.utils.tensorboard import SummaryWriter
-import math
-import copy
-from collections import Counter
-import networkx as nx
-from environment import PhysicalNetwork
-import torch
 import random
+import gymnasium as gym
+from torch.utils.tensorboard import SummaryWriter
+from torch.optim import Adam
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-seed = 0
+seed = 10
 random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
@@ -53,6 +49,11 @@ class ReplayBuffer(object):
         return len(self.size)
 
 
+def hard_update(target, source):
+    for target_param, param in zip(target.parameters(), source.parameters()):
+        target_param.data.copy_(param.data)
+
+
 def soft_update(target, source, tau):
     for target_param, param in zip(target.parameters(), source.parameters()):
         target_param.data.copy_(target_param.data * (1.0 - tau) + param.data * tau)
@@ -88,25 +89,25 @@ class DeterministicPolicy(nn.Module,):
 
 
 class DDPG(object):
-    def __init__(self, obs_dim, act_dim, hidden_size, gamma, tau,   expl_noise=0.1):
+    def __init__(self, num_inputs,  hidden_size, gamma, tau,   expl_noise=0.1):
         self.tau = tau
         self.gamma = gamma
 
         # Critic网络
-        self.critic = QNetwork(obs_dim, act_dim, hidden_size)
+        self.critic = QNetwork(num_inputs, 1, hidden_size)
         self.critic_optim = Adam(self.critic.parameters(), lr=1e-3)
 
         # 目标Critic网络
-        self.critic_target = QNetwork(obs_dim, act_dim, hidden_size)
-        self.critic_target.load_state_dict(self.critic.state_dict())
+        self.critic_target = QNetwork(num_inputs, 1, hidden_size)
+        hard_update(self.critic_target, self.critic)
 
         # 策略网络
-        self.policy = DeterministicPolicy(obs_dim, act_dim, hidden_size)
+        self.policy = DeterministicPolicy(num_inputs, 1, hidden_size)
         self.policy_optim = Adam(self.policy.parameters(), lr=1e-4)
 
         # 目标策略网络
-        self.policy_target = DeterministicPolicy(obs_dim, act_dim, hidden_size)
-        self.policy_target.load_state_dict(self.policy.state_dict())
+        self.policy_target = DeterministicPolicy(num_inputs, 1, hidden_size)
+        hard_update(self.policy_target, self.policy)
 
         # 探索噪声
         self.expl_noise = expl_noise
@@ -152,64 +153,48 @@ class DDPG(object):
 
 
 # %%
-env = PhysicalNetwork('Chinanet.gml', sfc_num=6, overload_threshold=0.85, seed=seed)
+env = gym.make("CartPole-v1",   render_mode="human")
+# env = gym.make("Pendulum-v1",   render_mode="human")
+# env = gym.make("Pendulum-v1", render_mode="human")
+# env = gym.make("Pendulum-v1")
 
-obs_dim = env.reset().shape[0]
-act_dim = 3
-agent = DDPG(obs_dim,
-             act_dim,
-             hidden_size=256,
+obs_dim = env.observation_space.shape[0]
+act_dim = 1
+agent = DDPG(env.observation_space.shape[0],
+             hidden_size=64,
              gamma=.99,
              tau=.005,
-             expl_noise=.8
+             expl_noise=.5
              )
 
 replay_buffer = ReplayBuffer(obs_dim, act_dim)
 
 
-def convert_action2index(a, max_val):
-    a = (a + 1) / 2  # 将 -1 ~ 1 映射到 0 ~ 1
-    a = math.floor(a*max_val)
-    return min(a, max_val - 1)
-
 # %%
-
-
-writer = SummaryWriter(f'runs/DDPG1_{seed}')
+writer = SummaryWriter(f'runs/DDPG_{seed}')
 for episode in range(1000000):
-    state = env.reset()
+    state, _ = env.reset(seed=seed)
     episode_reward = 0
 
-    for step in range(1000):
+    for step in range(200):
         action = agent.select_action(state)
-        s_, d_, u_ = action
-        s = convert_action2index(s_, 6)
-        d = convert_action2index(d_, 6)
-        u = convert_action2index(u_, len(env.G.nodes))
-        next_state, reward, done, info = env.step([s, d, u])
+        # next_state, reward, done, truncation, info = env.step(action)
+        a = 0 if action < 0 else 1
+        next_state, reward, done, truncation, info = env.step(a)
         replay_buffer.add(state, action, reward, next_state, mask=float(not done))
         state = next_state
         episode_reward += reward
 
-        if done or info['is_overload'] == False:
+        if done:
             break
 
     # Update the parameters of the agent
     for i in range(step):
-        agent.update_parameters(replay_buffer, 256)
-    agent.expl_noise *= 0.999
-    if agent.expl_noise < 0.05:
-        agent.expl_noise = 0.05
+        agent.update_parameters(replay_buffer, 64)
+    agent.expl_noise *= 0.99
 
-    writer.add_scalar('reward', episode_reward, episode)
-    writer.add_scalar('step len',  step, episode)
-    print(f"Episode: {episode}, Total Reward: {episode_reward}  ", 'step len',  step)
+    writer.add_scalar('reward_DDPG', episode_reward, episode)
+    print(f"Episode {episode}, Total Reward: {episode_reward:.2f}")
 
-# %%
-# env.step([5,5,0])
-while 1:
-    env.reset()
-    for sfc in env.sfcs:
-        for vnf in sfc.chain:
-            if vnf.deployed_node == None:
-                print(vnf.deployed_node)
+env.close()
+writer.close()

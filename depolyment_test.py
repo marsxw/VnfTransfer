@@ -106,6 +106,7 @@ class PhysicalNetwork:
             nx.draw(self.G, self.pos, nodelist=vnf_nodes[1:-1], node_color=color, node_size=self.node_size, font_size=self.font_size)
             nx.draw(self.G, self.pos, nodelist=[vnf_nodes[-1]], node_color='magenta', node_size=self.node_size, font_size=self.font_size)
             # 显示当前 SFC 的路径
+            sfc_path = self.sfc_path2sequence(sfc_path)
             nx.draw_networkx_edges(self.G, self.pos, edgelist=[(sfc_path[i], sfc_path[i+1])
                                    for i in range(len(sfc_path)-1)], width=self.width, edge_color=color)
             # 显示sfc的路径文本
@@ -143,7 +144,7 @@ class PhysicalNetwork:
                 selected_node = random.choice(available_nodes)
                 vnf.deployed_node = selected_node
                 deployed_nodes.append(selected_node)
-                deployed_path.append(selected_node)
+                # deployed_path.append(selected_node)
                 self.update_node_resources(selected_node, vnf)  # 更新节点资源
             else:
                 # 找到前一个部署的VNF节点，查找从前一个节点到当前可用节点的最短路径
@@ -182,7 +183,7 @@ class PhysicalNetwork:
                 # 部署VNF并更新资源
                 vnf.deployed_node = best_node
                 deployed_nodes.append(best_node)
-                deployed_path += best_path[1:]
+                deployed_path.append(best_path)
                 # print(deployed_nodes, deployed_path)
                 self.update_node_resources(best_node, vnf)
                 self.update_edge_resources(best_path, vnf)
@@ -238,6 +239,19 @@ class PhysicalNetwork:
                 print('edge overload', edge)
                 return True
         return False
+
+    def sfc_path2sequence(self, sfc_path):
+        '''
+            将sfc路径元祖转化为路径序列
+           (a,b), (b,c) -> a,b,c
+        '''
+        sequence = []
+        for i, path in enumerate(sfc_path):
+            if i == 0:
+                sequence += path
+            else:
+                sequence += path[1:]
+        return sequence
 
 
 topology_file = "./Chinanet.gml"

@@ -1,4 +1,4 @@
-#%%
+# %%
 # 导入必要的库
 import networkx as nx
 import matplotlib.pyplot as plt
@@ -36,9 +36,7 @@ plt.title("Basic Network Graph using NetworkX")
 plt.show()
 
 
-#%%
-import networkx as nx
-import matplotlib.pyplot as plt
+# %%
 
 # 创建一个有向图，并添加边和延迟
 G = nx.DiGraph()
@@ -75,6 +73,7 @@ def find_shortest_path_edges(graph, src_node, dst_node):
         total_shortest_path_delays.append(total_delay)
 
     return all_shortest_path_edges, total_shortest_path_delays
+
 
 # 调用 find_shortest_path_edges 函数，查找从 A 到 D 的最短路径
 all_edges, all_delays = find_shortest_path_edges(G, 'A', 'D')
